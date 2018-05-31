@@ -51,7 +51,7 @@ class MIOAnnotationTransform(object):
     Initilized with a dictionary lookup of classnames to indexes
     """
     def __init__(self):
-        self.label_map = get_label_map(osp.join(MIO_ROOT, 'miotcd_label.txt'))
+        self.label_map = get_label_map(osp.join(MIO_ROOT, '..' 'miotcd_label.txt'))
 
     def __call__(self, target, width, height):
         """
@@ -91,16 +91,16 @@ class MIODetection(data.Dataset):
     """
 
     def __init__(self, root, image_set='train', transform=None,
-                 target_transform=MIOAnnotationTransform(), dataset_name='MIO'):
+                 target_transform=MIOAnnotationTransform, dataset_name='MIO'):
         self.root = osp.join(root, IMAGES)
         self.mio_data = dict(self.find_data(image_set == 'train'))
         self.ids = list(self.mio_data.keys())
         self.transform = transform
-        self.target_transform = target_transform
+        self.target_transform = target_transform()
         self.name = dataset_name
 
     def find_data(self, is_train):
-        data = json.load(open(pjoin(osp.pardir(self.root), 'json{}.json'.format(
+        data = json.load(open(pjoin(self.root, '..', 'json{}.json'.format(
             'train' if is_train else 'test')), 'r'))
         # v is [mio_id,items] we do not use mio_id yet.
 
