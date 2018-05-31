@@ -87,6 +87,17 @@ def train():
         dataset = VOCDetection(root=args.dataset_root,
                                transform=SSDAugmentation(cfg['min_dim'],
                                                          MEANS))
+    elif args.dataset == "MIO":
+        if args.dataset_root == MIO_ROOT:
+            if not os.path.exists(MIO_ROOT):
+                parser.error('Must specify dataset_root if specifying dataset')
+            print("WARNING: Using default MIO dataset_root because " +
+                  "--dataset_root was not specified.")
+            args.dataset_root = MIO_ROOT
+        cfg = mio
+        dataset = MIODetection(root=args.dataset_root,
+                                transform=SSDAugmentation(cfg['min_dim'],
+                                                          MEANS))
 
     if args.visdom:
         import visdom
