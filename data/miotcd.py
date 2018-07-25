@@ -61,7 +61,7 @@ class MIOAnnotationTransform(object):
         """
         res = []
         for obj in target:
-            name = obj['label']
+            name = obj['class']
             bbox = obj
 
             pts = ['xmin', 'ymin', 'xmax', 'ymax']

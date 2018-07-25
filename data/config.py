@@ -1,8 +1,9 @@
 # config.py
+import os
 import os.path
 
 # gets home dir cross platform
-HOME = os.path.expanduser("~")
+HOME = os.path.join(os.path.dirname(__file__), '..')
 
 # for making bounding boxes pretty
 COLORS = ((255, 0, 0, 128), (0, 255, 0, 128), (0, 0, 255, 128),

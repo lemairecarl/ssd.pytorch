@@ -37,7 +37,7 @@ parser.add_argument('--start_iter', default=0, type=int,
                     help='Resume training at this iter')
 parser.add_argument('--num_workers', default=4, type=int,
                     help='Number of workers used in dataloading')
-parser.add_argument('--cuda', default=True, type=str2bool,
+parser.add_argument('--cuda', action='store_true',
                     help='Use CUDA to train model')
 parser.add_argument('--lr', '--learning-rate', default=1e-3, type=float,
                     help='initial learning rate')
@@ -108,7 +108,7 @@ def train():
 
     if args.resume:
         print('Resuming training, loading {}...'.format(args.resume))
-        ssd_net.load_weights(args.resume)
+        ssd_net.load_weights(args.resume, True)
     else:
         vgg_weights = torch.load(args.save_folder + args.basenet)
         print('Loading base network...')
