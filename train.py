@@ -1,3 +1,5 @@
+from tqdm import tqdm
+
 from data import *
 from utils.augmentations import SSDAugmentation
 from layers.modules import MultiBoxLoss
@@ -104,7 +106,7 @@ def train():
     net = ssd_net
 
     if args.cuda:
-        net = torch.nn.DataParallel(ssd_net)
+        net = ssd_net.cuda()
         cudnn.benchmark = True
 
     if args.resume:
@@ -155,18 +157,20 @@ def train():
 
     data_loader = lambda : data.DataLoader(dataset, args.batch_size,
                                   num_workers=args.num_workers,
-                                  shuffle=True, collate_fn=detection_collate,
-                                  pin_memory=True)
+                                  shuffle=False, collate_fn=detection_collate,
+                                  pin_memory=False)
 
     def make_inf(d):
         while True:
             it = d()
-            for x in it:
-                yield x
-
+            try:
+                for x in it:
+                    yield x
+            except StopIteration:
+                pass
     # create batch iterator
     batch_iterator = make_inf(data_loader)
-    for iteration in range(args.start_iter, cfg['max_iter']):
+    for iteration in tqdm(range(args.start_iter, cfg['max_iter'])):
         if args.visdom and iteration != 0 and (iteration % epoch_size == 0):
             update_vis_plot(epoch, loc_loss, conf_loss, epoch_plot, None,
                             'append', epoch_size)

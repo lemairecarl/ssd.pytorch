@@ -6,6 +6,7 @@ https://github.com/fmassa/vision/blob/voc_dataset/torchvision/datasets/voc.py
 Updated by: Ellis Brown, Max deGroot
 """
 import json
+from random import shuffle
 
 from .config import HOME
 import os.path as osp
@@ -107,7 +108,10 @@ class MIODetection(data.Dataset):
         self._imgpath = osp.join(self.root, 'images', '%s.jpg')
         self.ids = list()
         data = json.load(open(self._annopath))
-        for k, [_, vals] in data.items():
+        items = list(data.items())
+        shuffle(items)
+
+        for k, [_, vals] in items:
             self.ids.append((k, vals))
 
     def __getitem__(self, index):
