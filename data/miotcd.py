@@ -98,12 +98,12 @@ class MIODetection(data.Dataset):
 
     def __init__(self, root,
                  transform=None, target_transform=MIOAnnotationTransform(),
-                 dataset_name='mioTCD'):
+                 dataset_name='mioTCD', is_train=True):
         self.root = root
         self.transform = transform
         self.target_transform = target_transform
         self.name = dataset_name
-        self._annopath = osp.join(self.root, 'jsontrain.json')
+        self._annopath = osp.join(self.root, 'json{}.json'.format('train' if is_train else 'test'))
         self._imgpath = osp.join(self.root, 'images', '%s.jpg')
         self.ids = list()
         data = json.load(open(self._annopath))

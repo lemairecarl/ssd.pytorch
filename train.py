@@ -51,6 +51,7 @@ parser.add_argument('--visdom', default=False, type=str2bool,
                     help='Use visdom for loss visualization')
 parser.add_argument('--save_folder', default='weights/',
                     help='Directory for saving checkpoint models')
+parser.add_argument('--fresh', action='store_true')
 args = parser.parse_args()
 
 
@@ -108,7 +109,10 @@ def train():
 
     if args.resume:
         print('Resuming training, loading {}...'.format(args.resume))
-        ssd_net.load_weights(args.resume, True)
+        print('Skip loading for conf', args.fresh)
+        ssd_net.load_weights(args.resume, args.fresh)
+        if args.fresh:
+            ssd_net.conf.apply(weights_init)
     else:
         vgg_weights = torch.load(args.save_folder + args.basenet)
         print('Loading base network...')
@@ -149,12 +153,19 @@ def train():
         iter_plot = create_vis_plot('Iteration', 'Loss', vis_title, vis_legend)
         epoch_plot = create_vis_plot('Epoch', 'Loss', vis_title, vis_legend)
 
-    data_loader = data.DataLoader(dataset, args.batch_size,
+    data_loader = lambda : data.DataLoader(dataset, args.batch_size,
                                   num_workers=args.num_workers,
                                   shuffle=True, collate_fn=detection_collate,
                                   pin_memory=True)
+
+    def make_inf(d):
+        while True:
+            it = d()
+            for x in it:
+                yield x
+
     # create batch iterator
-    batch_iterator = iter(data_loader)
+    batch_iterator = make_inf(data_loader)
     for iteration in range(args.start_iter, cfg['max_iter']):
         if args.visdom and iteration != 0 and (iteration % epoch_size == 0):
             update_vis_plot(epoch, loc_loss, conf_loss, epoch_plot, None,
@@ -200,7 +211,7 @@ def train():
 
         if iteration != 0 and iteration % 5000 == 0:
             print('Saving state, iter:', iteration)
-            torch.save(ssd_net.state_dict(), 'weights/ssd300_COCO_' +
+            torch.save(ssd_net.state_dict(), 'weights/ssd300_{}_'.format(args.dataset) +
                        repr(iteration) + '.pth')
     torch.save(ssd_net.state_dict(),
                args.save_folder + '' + args.dataset + '.pth')

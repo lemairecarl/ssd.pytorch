@@ -1,7 +1,7 @@
 import torch
 from torch.autograd import Function
 from ..box_utils import decode, nms
-from data import voc as cfg
+from data import voc, coco, mio
 
 
 class Detect(Function):
@@ -19,7 +19,7 @@ class Detect(Function):
         if nms_thresh <= 0:
             raise ValueError('nms_threshold must be non negative.')
         self.conf_thresh = conf_thresh
-        self.variance = cfg['variance']
+        self.variance = {201: coco, 21:voc, 12:mio}[num_classes]['variance']
 
     def forward(self, loc_data, conf_data, prior_data):
         """
@@ -46,7 +46,7 @@ class Detect(Function):
             for cl in range(1, self.num_classes):
                 c_mask = conf_scores[cl].gt(self.conf_thresh)
                 scores = conf_scores[cl][c_mask]
-                if scores.dim() == 0:
+                if scores.size(0) == 0:
                     continue
                 l_mask = c_mask.unsqueeze(1).expand_as(decoded_boxes)
                 boxes = decoded_boxes[l_mask].view(-1, 4)
