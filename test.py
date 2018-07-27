@@ -14,11 +14,11 @@ from data import MIO_CLASSES as labelmap, MIO_ROOT, MIOAnnotationTransform, MIOD
 from ssd import build_ssd
 
 parser = argparse.ArgumentParser(description='Single Shot MultiBox Detection')
-parser.add_argument('--trained_model', default='ssd300_COCO_90000.pth',
+parser.add_argument('--trained_model', default='weights/MIO.pth',
                     type=str, help='Trained state_dict file path to open')
 parser.add_argument('--save_folder', default='.', type=str,
                     help='Dir to save results')
-parser.add_argument('--visual_threshold', default=0.5, type=float,
+parser.add_argument('--visual_threshold', default=0.4, type=float,
                     help='Final confidence threshold')
 parser.add_argument('--cuda', action='store_true',
                     help='Use cuda to train model')
@@ -57,12 +57,16 @@ def test_net(save_folder, net, cuda, testset, transform, thresh):
         for i in range(detections.size(1)):
             j = 0
             while detections[0, i, j, 0] >= thresh:
-                score = detections[0, i, j, 0]
+                score = detections[0, i, j, 0].item()
                 label_name = labelmap[i - 1]
                 pt = (detections[0, i, j, 1:] * scale).cpu().numpy()
                 coords = (pt[0], pt[1], pt[2], pt[3])
                 coords_int = tuple(map(int, coords))
                 results.append([img_id, score, label_name, *coords])
+                cv2.putText(img, label_name + '' + str(score)[:8],
+                            (coords_int[0], coords_int[1]),
+                            cv2.FONT_HERSHEY_COMPLEX,
+                            0.5, (0, 0, 255))
                 cv2.rectangle(img,(coords_int[0], coords_int[1]), (coords_int[2], coords_int[3]),(255, 0, 0))
                 j += 1
         cv2.imshow('lol', img)
