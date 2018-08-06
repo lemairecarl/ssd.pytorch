@@ -17,6 +17,9 @@ import torch.utils.data as data
 import numpy as np
 import argparse
 
+from utils.sampler import RandomSampler
+from utils.time import LossHistory
+
 
 def str2bool(v):
     return v.lower() in ("yes", "true", "t", "1")
@@ -25,7 +28,7 @@ def str2bool(v):
 parser = argparse.ArgumentParser(
     description='Single Shot MultiBox Detector Training With Pytorch')
 train_set = parser.add_mutually_exclusive_group()
-parser.add_argument('--dataset', default='VOC', choices=['VOC', 'COCO', 'MIO'],
+parser.add_argument('--dataset', default='MIO', choices=['VOC', 'COCO', 'MIO'],
                     type=str, help='VOC or COCO')
 parser.add_argument('--dataset_root', default=VOC_ROOT,
                     help='Dataset root directory path')
@@ -137,8 +140,8 @@ def train():
 
     net.train()
     # loss counters
-    loc_loss = 0
-    conf_loss = 0
+    loc_loss = LossHistory()
+    conf_loss = LossHistory()
     epoch = 0
     print('Loading the dataset...')
 
@@ -157,7 +160,7 @@ def train():
 
     data_loader = lambda : data.DataLoader(dataset, args.batch_size,
                                   num_workers=args.num_workers,
-                                  shuffle=False, collate_fn=detection_collate,
+                                  shuffle=False, sampler=RandomSampler(dataset), collate_fn=detection_collate,
                                   pin_memory=False)
 
     def make_inf(d):
@@ -170,15 +173,8 @@ def train():
                 pass
     # create batch iterator
     batch_iterator = make_inf(data_loader)
-    for iteration in tqdm(range(args.start_iter, cfg['max_iter'])):
-        if args.visdom and iteration != 0 and (iteration % epoch_size == 0):
-            update_vis_plot(epoch, loc_loss, conf_loss, epoch_plot, None,
-                            'append', epoch_size)
-            # reset epoch loss counters
-            loc_loss = 0
-            conf_loss = 0
-            epoch += 1
-
+    pbar = tqdm(range(args.start_iter, cfg['max_iter']))
+    for iteration in pbar:
         if iteration in cfg['lr_steps']:
             step_index += 1
             adjust_learning_rate(optimizer, args.gamma, step_index)
@@ -202,19 +198,20 @@ def train():
         loss.backward()
         optimizer.step()
         t1 = time.time()
-        loc_loss += loss_l.data[0]
-        conf_loss += loss_c.data[0]
+        loc_loss.update(loss_l.data.item())
+        conf_loss.update(loss_c.data.item())
+
+        pbar.desc = 'Loc : {:10.5f}, Conf: {:10.5f}'.format(loc_loss.avg,
+                                                      conf_loss.avg)
 
         if iteration % 10 == 0:
-            print('timer: %.4f sec.' % (t1 - t0))
-            print('iter ' + repr(iteration) + ' || Loss: %.4f ||' % (loss.data[0]), end=' ')
+            pass
+            #print('timer: %.4f sec.' % (t1 - t0))
+            #print('iter ' + repr(iteration) + ' || Loss: %.4f ||' % (loss.data[0]), end=' ')
 
-        if args.visdom:
-            update_vis_plot(iteration, loss_l.data[0], loss_c.data[0],
-                            iter_plot, epoch_plot, 'append')
 
         if iteration != 0 and iteration % 5000 == 0:
-            print('Saving state, iter:', iteration)
+            #print('Saving state, iter:', iteration)
             torch.save(ssd_net.state_dict(), 'weights/ssd300_{}_'.format(args.dataset) +
                        repr(iteration) + '.pth')
     torch.save(ssd_net.state_dict(),
@@ -275,3 +272,4 @@ def update_vis_plot(iteration, loc, conf, window1, window2, update_type,
 
 if __name__ == '__main__':
     train()
+
