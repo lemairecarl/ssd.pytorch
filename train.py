@@ -1,22 +1,20 @@
+import argparse
+import os
+import time
+
+import torch
+import torch.backends.cudnn as cudnn
+import torch.nn as nn
+import torch.nn.init as init
+import torch.optim as optim
+import torch.utils.data as data
+from torch.autograd import Variable
 from tqdm import tqdm
 
 from data import *
-from utils.augmentations import SSDAugmentation
 from layers.modules import MultiBoxLoss
 from ssd import build_ssd
-import os
-import sys
-import time
-import torch
-from torch.autograd import Variable
-import torch.nn as nn
-import torch.optim as optim
-import torch.backends.cudnn as cudnn
-import torch.nn.init as init
-import torch.utils.data as data
-import numpy as np
-import argparse
-
+from utils.augmentations import SSDAugmentation
 from utils.sampler import RandomSampler
 from utils.time import LossHistory
 

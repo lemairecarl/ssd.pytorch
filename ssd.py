@@ -105,6 +105,7 @@ class SSD(nn.Module):
                 loc.view(loc.size(0), -1, 4),                   # loc preds
                 self.softmax(conf.view(conf.size(0), -1,
                              self.num_classes)),                # conf preds
+                F.sigmoid(status.view(status.size(0), -1, 2)),
                 self.priors.type(type(x.data))                  # default boxes
             )
         else:

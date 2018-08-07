@@ -1,16 +1,17 @@
 from __future__ import print_function
 
 import argparse
-import cv2
 import os
 
+import cv2
+import numpy as np
 import torch
 import torch.backends.cudnn as cudnn
 from torch.autograd import Variable
 from tqdm import tqdm
 
-from data import BaseTransform, VOC_CLASSES, MIO_CLASSES
-from data import MIO_CLASSES as labelmap, MIO_ROOT, MIOAnnotationTransform, MIODetection
+from data import BaseTransform, MIO_CLASSES
+from data import MIO_CLASSES as labelmap, MIOAnnotationTransform, MIODetection
 from ssd import build_ssd
 
 SHOW = True
@@ -61,16 +62,23 @@ def test_net(save_folder, net, cuda, testset, transform, thresh):
             while detections[0, i, j, 0] > thresh:
                 score = detections[0, i, j, 0].item()
                 label_name = labelmap[i - 1]
-                pt = (detections[0, i, j, 1:] * scale).cpu().numpy()
+                pt = (detections[0, i, j, 1:-2] * scale).cpu().numpy()
+                orientation = (detections[0, i, j, -2]).item() * (2 * np.pi)
+                parked = (detections[0, i, j, -1]).item()
                 coords = (pt[0], pt[1], pt[2], pt[3])
                 coords_int = tuple(map(int, coords))
-                results.append([img_id, label_name, score, *coords])
+                cx, cy = int(np.mean(coords[::2])), int(np.mean(coords[1::2]))
+                results.append([img_id, label_name, score, *coords, orientation, parked])
                 if SHOW:
+                    clr = (0, 255, 0) if parked < 0.5 else (0, 0, 255)
                     cv2.putText(img, label_name + '' + str(score)[:8],
                                 (coords_int[0], coords_int[1]),
                                 cv2.FONT_HERSHEY_COMPLEX,
                                 0.5, (0, 0, 255))
-                    cv2.rectangle(img,(coords_int[0], coords_int[1]), (coords_int[2], coords_int[3]),(255, 0, 0))
+                    cv2.arrowedLine(img, (cx, cy), (int(cx + 20 * np.cos(orientation)), int(cy + 20 * np.sin(orientation))),
+                                    clr, 1, tipLength=2.)
+
+                    cv2.rectangle(img, (coords_int[0], coords_int[1]), (coords_int[2], coords_int[3]), (255, 0, 0))
                 j += 1
         if SHOW:
             cv2.imshow('lol', img)
@@ -100,4 +108,3 @@ def test_voc():
 
 if __name__ == '__main__':
     test_voc()
-

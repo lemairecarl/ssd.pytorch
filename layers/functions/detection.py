@@ -21,7 +21,7 @@ class Detect(Function):
         self.conf_thresh = conf_thresh
         self.variance = {201: coco, 21:voc, 12:mio}[num_classes]['variance']
 
-    def forward(self, loc_data, conf_data, prior_data):
+    def forward(self, loc_data, conf_data, status_data, prior_data):
         """
         Args:
             loc_data: (tensor) Loc preds from loc layers
@@ -33,15 +33,19 @@ class Detect(Function):
         """
         num = loc_data.size(0)  # batch size
         num_priors = prior_data.size(0)
-        output = torch.zeros(num, self.num_classes, self.top_k, 5)
+        output = torch.zeros(num, self.num_classes, self.top_k, 7)
         conf_preds = conf_data.view(num, num_priors,
                                     self.num_classes).transpose(2, 1)
+        orientation_preds = status_data[..., :1]
+        parked_preds = status_data[..., 1:]
 
         # Decode predictions into bboxes.
         for i in range(num):
             decoded_boxes = decode(loc_data[i], prior_data, self.variance)
             # For each class, perform nms
             conf_scores = conf_preds[i].clone()
+            orientation_scores = orientation_preds[i].clone()
+            parked_scores = parked_preds[i].clone()
 
             for cl in range(1, self.num_classes):
                 c_mask = conf_scores[cl].gt(self.conf_thresh)
@@ -50,12 +54,14 @@ class Detect(Function):
                     continue
                 l_mask = c_mask.unsqueeze(1).expand_as(decoded_boxes)
                 boxes = decoded_boxes[l_mask].view(-1, 4)
+                orientations = orientation_scores[l_mask[...,-1:]].view(-1, 1)
+                parked = parked_scores[l_mask[...,-1:]].view(-1, 1)
                 # idx of highest scoring and non-overlapping boxes per class
                 ids, count = nms(boxes, scores, self.nms_thresh, self.top_k)
                 output[i, cl, :count] = \
                     torch.cat((scores[ids[:count]].unsqueeze(1),
-                               boxes[ids[:count]]), 1)
-        flt = output.contiguous().view(num, -1, 5)
+                               boxes[ids[:count]], orientations[ids[:count]], parked[ids[:count]]), 1)
+        flt = output.contiguous().view(num, -1, 5+2)
         _, idx = flt[:, :, 0].sort(1, descending=True)
         _, rank = idx.sort(1)
         flt[(rank < self.top_k).unsqueeze(-1).expand_as(flt)].fill_(0)
