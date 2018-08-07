@@ -8,7 +8,8 @@ Updated by: Ellis Brown, Max deGroot
 import json
 from random import shuffle
 
-from .config import HOME
+from utils import SSDAugmentation
+from data.config import HOME
 import os.path as osp
 import sys
 import torch
@@ -78,7 +79,7 @@ class MIOAnnotationTransform(object):
             bndbox.append(label_idx)
             bndbox.append(angle)
             bndbox.append(parked)
-            res += [bndbox]  # [xmin, ymin, xmax, ymax, label_ind]
+            res += [bndbox]  # [xmin, ymin, xmax, ymax, label_ind, angle, parked]
             # img_id = target.find('filename').text[:-4]
 
         return res  # [[xmin, ymin, xmax, ymax, label_ind], ... ]
@@ -140,7 +141,7 @@ class MIODetection(data.Dataset):
             # to rgb
             img = img[:, :, (2, 1, 0)]
             # img = img.transpose(2, 0, 1)
-            target = np.hstack((boxes, np.expand_dims(labels, axis=1)))
+            target = np.hstack((boxes, labels))
         return torch.from_numpy(img).permute(2, 0, 1), target, height, width
         # return torch.from_numpy(img), target, height, width
 
@@ -186,3 +187,9 @@ class MIODetection(data.Dataset):
             tensorized version of img, squeezed
         '''
         return torch.Tensor(self.pull_image(index)).unsqueeze_(0)
+
+if __name__ == '__main__':
+    MEANS = (104, 117, 123)
+    d = MIODetection('/data/mio_tcd_seg', transform=SSDAugmentation(300,
+                                                         MEANS))
+    d[0]

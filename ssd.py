@@ -31,7 +31,8 @@ class SSD(nn.Module):
         self.num_classes = num_classes
         self.cfg = {201: coco, 21:voc, 12:mio}[num_classes]
         self.priorbox = PriorBox(self.cfg)
-        self.priors = Variable(self.priorbox.forward(), volatile=True)
+        with torch.no_grad():
+            self.priors = Variable(self.priorbox.forward(), volatile=True)
         self.size = size
 
         # SSD network
@@ -123,7 +124,7 @@ class SSD(nn.Module):
                                  map_location=lambda storage, loc: storage)
             if cut:
                 state_dict = {k:v for k,v in state_dict.items() if all(layer not in k for layer in ['conf', 'status'])}
-            self.load_state_dict(state_dict, strict=True)
+            self.load_state_dict(state_dict, strict=False)
             print('Finished!')
         else:
             print('Sorry only .pth and .pkl files supported.')
