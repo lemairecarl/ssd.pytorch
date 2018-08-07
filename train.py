@@ -185,17 +185,19 @@ def train():
             adjust_learning_rate(optimizer, args.gamma, step_index)
 
         # load train data
-        images, targets = next(batch_iterator)
+        images, targets, odfs = next(batch_iterator)
         with torch.no_grad():
             if args.cuda:
                 images = Variable(images.cuda())
+                odfs = Variable(odfs.cuda())
                 targets = [Variable(ann.cuda()) for ann in targets]
             else:
                 images = Variable(images)
+                odfs = Variable(odfs)
                 targets = [Variable(ann) for ann in targets]
         # forward
         t0 = time.time()
-        out = net(images)
+        out = net(images, odfs)
         # backprop
         optimizer.zero_grad()
         loss_l, loss_c, loss_o, loss_p = criterion(out, targets)

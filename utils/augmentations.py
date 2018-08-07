@@ -47,10 +47,10 @@ class Compose(object):
     def __init__(self, transforms):
         self.transforms = transforms
 
-    def __call__(self, img, boxes=None, labels=None):
+    def __call__(self, img, boxes=None, labels=None, odf=None):
         for t in self.transforms:
-            img, boxes, labels = t(img, boxes, labels)
-        return img, boxes, labels
+            img, boxes, labels, odf = t(img, boxes, labels, odf)
+        return img, boxes, labels, odf
 
 
 class Lambda(object):
@@ -60,55 +60,56 @@ class Lambda(object):
         assert isinstance(lambd, types.LambdaType)
         self.lambd = lambd
 
-    def __call__(self, img, boxes=None, labels=None):
-        return self.lambd(img, boxes, labels)
+    def __call__(self, img, boxes=None, labels=None, odf=None):
+        return self.lambd(img, boxes, labels, odf)
 
 
 class ConvertFromInts(object):
-    def __call__(self, image, boxes=None, labels=None):
-        return image.astype(np.float32), boxes, labels
+    def __call__(self, image, boxes=None, labels=None, odf=None):
+        return image.astype(np.float32), boxes, labels, odf
 
 
 class SubtractMeans(object):
     def __init__(self, mean):
         self.mean = np.array(mean, dtype=np.float32)
 
-    def __call__(self, image, boxes=None, labels=None):
+    def __call__(self, image, boxes=None, labels=None, odf=None):
         image = image.astype(np.float32)
         image -= self.mean
-        return image.astype(np.float32), boxes, labels
+        return image.astype(np.float32), boxes, labels, odf
 
 
 class ToAbsoluteCoords(object):
-    def __call__(self, image, boxes=None, labels=None):
+    def __call__(self, image, boxes=None, labels=None, odf=None):
         height, width, channels = image.shape
         boxes[:, 0] *= width
         boxes[:, 2] *= width
         boxes[:, 1] *= height
         boxes[:, 3] *= height
 
-        return image, boxes, labels
+        return image, boxes, labels, odf
 
 
 class ToPercentCoords(object):
-    def __call__(self, image, boxes=None, labels=None):
+    def __call__(self, image, boxes=None, labels=None, odf=None):
         height, width, channels = image.shape
         boxes[:, 0] /= width
         boxes[:, 2] /= width
         boxes[:, 1] /= height
         boxes[:, 3] /= height
 
-        return image, boxes, labels
+        return image, boxes, labels, odf
 
 
 class Resize(object):
     def __init__(self, size=300):
         self.size = size
 
-    def __call__(self, image, boxes=None, labels=None):
+    def __call__(self, image, boxes=None, labels=None, odf=None):
         image = cv2.resize(image, (self.size,
                                  self.size))
-        return image, boxes, labels
+        odf = cv2.resize(odf, (19, 19),interpolation=cv2.INTER_NEAREST)
+        return image, boxes, labels, odf
 
 
 class RandomSaturation(object):
@@ -118,11 +119,11 @@ class RandomSaturation(object):
         assert self.upper >= self.lower, "contrast upper must be >= lower."
         assert self.lower >= 0, "contrast lower must be non-negative."
 
-    def __call__(self, image, boxes=None, labels=None):
+    def __call__(self, image, boxes=None, labels=None, odf=None):
         if random.randint(2):
             image[:, :, 1] *= random.uniform(self.lower, self.upper)
 
-        return image, boxes, labels
+        return image, boxes, labels, odf
 
 
 class RandomHue(object):
@@ -130,12 +131,12 @@ class RandomHue(object):
         assert delta >= 0.0 and delta <= 360.0
         self.delta = delta
 
-    def __call__(self, image, boxes=None, labels=None):
+    def __call__(self, image, boxes=None, labels=None, odf=None):
         if random.randint(2):
             image[:, :, 0] += random.uniform(-self.delta, self.delta)
             image[:, :, 0][image[:, :, 0] > 360.0] -= 360.0
             image[:, :, 0][image[:, :, 0] < 0.0] += 360.0
-        return image, boxes, labels
+        return image, boxes, labels, odf
 
 
 class RandomLightingNoise(object):
@@ -144,12 +145,12 @@ class RandomLightingNoise(object):
                       (1, 0, 2), (1, 2, 0),
                       (2, 0, 1), (2, 1, 0))
 
-    def __call__(self, image, boxes=None, labels=None):
+    def __call__(self, image, boxes=None, labels=None, odf=None):
         if random.randint(2):
             swap = self.perms[random.randint(len(self.perms))]
             shuffle = SwapChannels(swap)  # shuffle channels
             image = shuffle(image)
-        return image, boxes, labels
+        return image, boxes, labels, odf
 
 
 class ConvertColor(object):
@@ -157,14 +158,14 @@ class ConvertColor(object):
         self.transform = transform
         self.current = current
 
-    def __call__(self, image, boxes=None, labels=None):
+    def __call__(self, image, boxes=None, labels=None, odf=None):
         if self.current == 'BGR' and self.transform == 'HSV':
             image = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
         elif self.current == 'HSV' and self.transform == 'BGR':
             image = cv2.cvtColor(image, cv2.COLOR_HSV2BGR)
         else:
             raise NotImplementedError
-        return image, boxes, labels
+        return image, boxes, labels, odf
 
 
 class RandomContrast(object):
@@ -175,11 +176,11 @@ class RandomContrast(object):
         assert self.lower >= 0, "contrast lower must be non-negative."
 
     # expects float image
-    def __call__(self, image, boxes=None, labels=None):
+    def __call__(self, image, boxes=None, labels=None, odf=None):
         if random.randint(2):
             alpha = random.uniform(self.lower, self.upper)
             image *= alpha
-        return image, boxes, labels
+        return image, boxes, labels, odf
 
 
 class RandomBrightness(object):
@@ -188,21 +189,21 @@ class RandomBrightness(object):
         assert delta <= 255.0
         self.delta = delta
 
-    def __call__(self, image, boxes=None, labels=None):
+    def __call__(self, image, boxes=None, labels=None, odf=None):
         if random.randint(2):
             delta = random.uniform(-self.delta, self.delta)
             image += delta
-        return image, boxes, labels
+        return image, boxes, labels, odf
 
 
 class ToCV2Image(object):
-    def __call__(self, tensor, boxes=None, labels=None):
-        return tensor.cpu().numpy().astype(np.float32).transpose((1, 2, 0)), boxes, labels
+    def __call__(self, tensor, boxes=None, labels=None, odf=None):
+        return tensor.cpu().numpy().astype(np.float32).transpose((1, 2, 0)), boxes, labels, odf
 
 
 class ToTensor(object):
-    def __call__(self, cvimage, boxes=None, labels=None):
-        return torch.from_numpy(cvimage.astype(np.float32)).permute(2, 0, 1), boxes, labels
+    def __call__(self, cvimage, boxes=None, labels=None, odf=None):
+        return torch.from_numpy(cvimage.astype(np.float32)).permute(2, 0, 1), boxes, labels, odf
 
 
 class RandomSampleCrop(object):
@@ -231,13 +232,13 @@ class RandomSampleCrop(object):
             (None, None),
         )
 
-    def __call__(self, image, boxes=None, labels=None):
+    def __call__(self, image, boxes=None, labels=None, odf=None):
         height, width, _ = image.shape
         while True:
             # randomly choose a mode
             mode = random.choice(self.sample_options)
             if mode is None:
-                return image, boxes, labels
+                return image, boxes, labels, odf
 
             min_iou, max_iou = mode
             if min_iou is None:
@@ -248,6 +249,7 @@ class RandomSampleCrop(object):
             # max trails (50)
             for _ in range(50):
                 current_image = image
+                current_odf = odf
 
                 w = random.uniform(0.3 * width, width)
                 h = random.uniform(0.3 * height, height)
@@ -261,6 +263,10 @@ class RandomSampleCrop(object):
 
                 # convert to integer rect x1,y1,x2,y2
                 rect = np.array([int(left), int(top), int(left+w), int(top+h)])
+                odf_rect = np.array([int(left / width * 19),
+                                     int(top/ height * 1),
+                                     int((left+w)/ width * 19),
+                                     int((top+h)/ height * 19)])
 
                 # calculate IoU (jaccard overlap) b/t the cropped and gt boxes
                 overlap = jaccard_numpy(boxes, rect)
@@ -272,6 +278,9 @@ class RandomSampleCrop(object):
                 # cut the crop from the image
                 current_image = current_image[rect[1]:rect[3], rect[0]:rect[2],
                                               :]
+                current_odf = current_odf[odf_rect[1]:odf_rect[3], odf_rect[0]:odf_rect[2],
+                                :]
+
 
                 # keep overlap with gt box IF center in sampled patch
                 centers = (boxes[:, :2] + boxes[:, 2:]) / 2.0
@@ -306,21 +315,23 @@ class RandomSampleCrop(object):
                 # adjust to crop (by substracting crop's left,top)
                 current_boxes[:, 2:] -= rect[:2]
 
-                return current_image, current_boxes, current_labels
+                return current_image, current_boxes, current_labels, current_odf
 
 
 class Expand(object):
     def __init__(self, mean):
         self.mean = mean
 
-    def __call__(self, image, boxes, labels):
+    def __call__(self, image, boxes, labels, odf=None):
         if random.randint(2):
-            return image, boxes, labels
+            return image, boxes, labels, odf
 
         height, width, depth = image.shape
         ratio = random.uniform(1, 4)
         left = random.uniform(0, width*ratio - width)
+        left_o = random.uniform(0, 19*ratio - 19)
         top = random.uniform(0, height*ratio - height)
+        top_o = random.uniform(0, 19*ratio - 19)
 
         expand_image = np.zeros(
             (int(height*ratio), int(width*ratio), depth),
@@ -330,22 +341,36 @@ class Expand(object):
                      int(left):int(left + width)] = image
         image = expand_image
 
+        expand_odf = np.zeros(
+            (int(19 * ratio), int(19 * ratio), 10),
+            dtype=odf.dtype)
+        expand_odf[:, :, :] = 0.1
+        expand_odf[int(top_o):int(top_o + 19),
+        int(left_o):int(left_o + 19)] = odf
+        odf = expand_odf
+        odf = cv2.resize(odf, (19, 19), interpolation=cv2.INTER_NEAREST)
+
         boxes = boxes.copy()
         boxes[:, :2] += (int(left), int(top))
         boxes[:, 2:] += (int(left), int(top))
 
-        return image, boxes, labels
+        return image, boxes, labels, odf
 
 
 class RandomMirror(object):
-    def __call__(self, image, boxes, classes):
+    def __call__(self, image, boxes, classes, odf=None):
         _, width, _ = image.shape
         if random.randint(2):
             image = image[:, ::-1]
+            odf = odf[:, ::-1]
+            top = odf[..., :5]
+            odf[..., :5] = top[..., ::-1]
+            bot = odf[..., 5:]
+            odf[..., 5:] = bot[..., ::-1]
             boxes = boxes.copy()
             boxes[:, 0::2] = width - boxes[:, 2::-2]
             classes[:, -2] = 0.5 - classes[:, -2]
-        return image, boxes, classes
+        return image, boxes, classes, odf
 
 
 class SwapChannels(object):
@@ -387,15 +412,15 @@ class PhotometricDistort(object):
         self.rand_brightness = RandomBrightness()
         self.rand_light_noise = RandomLightingNoise()
 
-    def __call__(self, image, boxes, labels):
+    def __call__(self, image, boxes, labels, odf=None):
         im = image.copy()
-        im, boxes, labels = self.rand_brightness(im, boxes, labels)
+        im, boxes, labels, odf = self.rand_brightness(im, boxes, labels, odf)
         if random.randint(2):
             distort = Compose(self.pd[:-1])
         else:
             distort = Compose(self.pd[1:])
-        im, boxes, labels = distort(im, boxes, labels)
-        return self.rand_light_noise(im, boxes, labels)
+        im, boxes, labels, odf = distort(im, boxes, labels, odf)
+        return self.rand_light_noise(im, boxes, labels, odf)
 
 
 class SSDAugmentation(object):
@@ -414,5 +439,5 @@ class SSDAugmentation(object):
             SubtractMeans(self.mean)
         ])
 
-    def __call__(self, img, boxes, labels):
-        return self.augment(img, boxes, labels)
+    def __call__(self, img, boxes, labels, odf=None):
+        return self.augment(img, boxes, labels, odf)

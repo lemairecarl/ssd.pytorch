@@ -8,6 +8,8 @@ Updated by: Ellis Brown, Max deGroot
 import json
 from random import shuffle
 
+import h5py
+
 from utils import SSDAugmentation
 from data.config import HOME
 import os.path as osp
@@ -111,38 +113,55 @@ class MIODetection(data.Dataset):
         self.name = dataset_name
         self._annopath = osp.join(self.root, 'json{}.json'.format('train' if is_train else 'test'))
         self._imgpath = osp.join(self.root, 'images', '%s.jpg')
+        self.get_h5pyfile = lambda: h5py.File(osp.join(self.root, 'apriori.h5'), 'r')
         self.ids = list()
         data = json.load(open(self._annopath))
         items = list(data.items())
         shuffle(items)
 
-        for k, [_, vals] in items:
-            self.ids.append((k, vals))
+        for k, [[_, video_id], vals] in items:
+            self.ids.append((k, (video_id, vals)))
 
     def __getitem__(self, index):
-        im, gt, h, w = self.pull_item(index)
+        im, gt, odf, h, w = self.pull_item(index)
 
-        return im, gt
+        return im, gt, odf
 
     def __len__(self):
         return len(self.ids)
 
     def pull_item(self, index):
-        img_id, target = self.ids[index]
+        img_id, [video_id, target] = self.ids[index]
         img = cv2.imread(self._imgpath % img_id)
         height, width, channels = img.shape
+        with self.get_h5pyfile() as f:
+            odf = f[video_id].value - 1
+
+        p = [.5] + [.5 / odf.shape[0]] * odf.shape[0]
+        to_take = np.random.choice(np.arange(0, odf.shape[0] + 1), p=p)
+        if to_take == 0:
+            odf = np.ones([19, 19, odf.shape[-1]]) / odf.shape[-1]
+        else:
+            # Remove all but one uniform
+            odf = odf[np.random.choice(np.arange(0, to_take), to_take)].sum(0)
+            odf[odf == 0] = 1.
+            odf = odf / odf.sum(-1, keepdims=True)
+            # Add noise
+        odf += np.random.normal(0, 0.1, size=[19, 19, odf.shape[-1]])
+        odf = odf.clip(0, 1.)
+        odf = odf / odf.sum(-1, keepdims=True)
 
         if self.target_transform is not None:
             target = self.target_transform(target, width, height)
 
         if self.transform is not None:
             target = np.array(target)
-            img, boxes, labels = self.transform(img, target[:, :4], target[:, 4:])
+            img, boxes, labels, odf = self.transform(img, target[:, :4], target[:, 4:], odf=odf)
             # to rgb
             img = img[:, :, (2, 1, 0)]
             # img = img.transpose(2, 0, 1)
             target = np.hstack((boxes, labels))
-        return torch.from_numpy(img).permute(2, 0, 1), target, height, width
+        return torch.from_numpy(img).permute(2, 0, 1), target, torch.from_numpy(np.copy(odf).astype(np.float32)).permute(2, 0, 1), height, width
         # return torch.from_numpy(img), target, height, width
 
     def pull_image(self, index):
@@ -171,7 +190,7 @@ class MIODetection(data.Dataset):
             list:  [img_id, [(label, bbox coords),...]]
                 eg: ('001718', [('dog', (96, 13, 438, 332))])
         '''
-        img_id, anno = self.ids[index][1]
+        img_id, [_, anno] = self.ids[index][1]
         gt = self.target_transform(anno, 1, 1)
         return img_id, gt
 

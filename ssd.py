@@ -32,7 +32,7 @@ class SSD(nn.Module):
         self.cfg = {201: coco, 21:voc, 12:mio}[num_classes]
         self.priorbox = PriorBox(self.cfg)
         with torch.no_grad():
-            self.priors = Variable(self.priorbox.forward(), volatile=True)
+            self.priors = Variable(self.priorbox.forward())
         self.size = size
 
         # SSD network
@@ -49,7 +49,7 @@ class SSD(nn.Module):
             self.softmax = nn.Softmax(dim=-1)
             self.detect = Detect(num_classes, 0, 200, 0.01, 0.45)
 
-    def forward(self, x):
+    def forward(self, x, odfs):
         """Applies network layers and ops on input image(s) x.
 
         Args:
@@ -84,6 +84,8 @@ class SSD(nn.Module):
         for k in range(23, len(self.vgg)):
             x = self.vgg[k](x)
         sources.append(x)
+
+        x = torch.cat((x, odfs), 1)
 
         # apply extra layers and cache source layer outputs
         for k, v in enumerate(self.extras):
@@ -164,10 +166,10 @@ def add_extras(cfg, i, batch_norm=False):
     for k, v in enumerate(cfg):
         if in_channels != 'S':
             if v == 'S':
-                layers += [nn.Conv2d(in_channels, cfg[k + 1],
+                layers += [nn.Conv2d(in_channels + (10 if k == 0 else 0), cfg[k + 1],
                            kernel_size=(1, 3)[flag], stride=2, padding=1)]
             else:
-                layers += [nn.Conv2d(in_channels, v, kernel_size=(1, 3)[flag])]
+                layers += [nn.Conv2d(in_channels + (10 if k == 0 else 0), v, kernel_size=(1, 3)[flag])]
             flag = not flag
         in_channels = v
     return layers
