@@ -212,7 +212,7 @@ def train():
         for h, l in zip(history, [loss_l, loss_c, loss_o, loss_p]):
             h.update(l.data.item())
 
-        pbar.desc = ','.join(['{} : {:10.5f}'.format(h.name, h.avg) for h in history])
+        pbar.desc = ', '.join(['{}: {:10.5f}'.format(h.name, h.avg) for h in history])
 
 
         if iteration != 0 and iteration % 5000 == 0:

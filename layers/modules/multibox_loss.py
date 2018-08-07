@@ -73,7 +73,7 @@ class MultiBoxLoss(nn.Module):
         orientation_t = torch.FloatTensor(num, num_priors, 1)
         parked_t = torch.FloatTensor(num, num_priors, 1)
         for idx in range(num):
-            truths = targets[idx][:, :-1].data
+            truths = targets[idx][:, :-3].data
             labels = targets[idx][:, 4].data
             orientation = targets[idx][:, 5:6].data
             parked = targets[idx][:, 6:7].data
@@ -134,7 +134,7 @@ class MultiBoxLoss(nn.Module):
         parked_p = parked_data[(pos_idx + neg_idx).gt(0)].view(-1, 1)
         targets_weighted = parked_t[(pos + neg).gt(0)]
         loss_p = F.binary_cross_entropy(
-            parked_p, targets_weighted, size_average=False)
+            F.sigmoid(parked_p), targets_weighted, size_average=False)
 
         # Sum of losses: L(x,c,l,g) = (Lconf(x, c) + αLloc(x,l,g)) / N
 
