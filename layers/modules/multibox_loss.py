@@ -3,7 +3,9 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.autograd import Variable
+
 from data import coco, voc, mio
+from layers.angle_utils import dot_product_loss
 from ..box_utils import match, log_sum_exp
 
 
@@ -43,21 +45,23 @@ class MultiBoxLoss(nn.Module):
         self.do_neg_mining = neg_mining
         self.negpos_ratio = neg_pos
         self.neg_overlap = neg_overlap
-        self.variance = {201: coco, 21:voc, 12:mio}[num_classes]['variance']
+        self.variance = {201: coco, 21: voc, 12: mio}[num_classes]['variance']
 
     def forward(self, predictions, targets):
         """Multibox Loss
         Args:
-            predictions (tuple): A tuple containing loc preds, conf preds,
+            predictions (tuple): A tuple containing loc preds, conf preds, status preds,
             and prior boxes from SSD net.
                 conf shape: torch.size(batch_size,num_priors,num_classes)
                 loc shape: torch.size(batch_size,num_priors,4)
                 priors shape: torch.size(num_priors,4)
 
             targets (tensor): Ground truth boxes and labels for a batch,
-                shape: [batch_size,num_objs,5] (last idx is the label).
+                shape: [batch_size,num_objs,7] (4 is the label, 5 is angle, 6 is parked).
         """
-        loc_data, conf_data, priors = predictions
+        loc_data, conf_data, status_data, priors = predictions
+        orientation_data = status_data[..., :1]
+        parked_data = status_data[..., 1:]
         num = loc_data.size(0)
         priors = priors[:loc_data.size(1), :]
         num_priors = (priors.size(0))
@@ -66,18 +70,26 @@ class MultiBoxLoss(nn.Module):
         # match priors (default boxes) and ground truth boxes
         loc_t = torch.Tensor(num, num_priors, 4)
         conf_t = torch.LongTensor(num, num_priors)
+        orientation_t = torch.FloatTensor(num, num_priors, 1)
+        parked_t = torch.FloatTensor(num, num_priors, 1)
         for idx in range(num):
             truths = targets[idx][:, :-1].data
-            labels = targets[idx][:, -1].data
+            labels = targets[idx][:, 4].data
+            orientation = targets[idx][:, 5:6].data
+            parked = targets[idx][:, 6:7].data
             defaults = priors.data
-            match(self.threshold, truths, defaults, self.variance, labels,
-                  loc_t, conf_t, idx)
+            match(self.threshold, truths, defaults, self.variance, labels, orientation=orientation, parked=parked,
+                  target=(loc_t, conf_t, orientation_t, parked_t), idx=idx)
         if self.use_gpu:
             loc_t = loc_t.cuda()
             conf_t = conf_t.cuda()
+            orientation_t = orientation_t.cuda()
+            parked_t = parked_t.cuda()
         # wrap targets
         loc_t = Variable(loc_t, requires_grad=False)
         conf_t = Variable(conf_t, requires_grad=False)
+        orientation_t = Variable(orientation_t, requires_grad=False)
+        parked_t = Variable(parked_t, requires_grad=False)
 
         pos = conf_t > 0
         num_pos = pos.sum(dim=1, keepdim=True)
@@ -99,19 +111,36 @@ class MultiBoxLoss(nn.Module):
         _, loss_idx = loss_c.sort(1, descending=True)
         _, idx_rank = loss_idx.sort(1)
         num_pos = pos.long().sum(1, keepdim=True)
-        num_neg = torch.clamp(self.negpos_ratio*num_pos, max=pos.size(1)-1)
+        num_neg = torch.clamp(self.negpos_ratio * num_pos, max=pos.size(1) - 1)
         neg = idx_rank < num_neg.expand_as(idx_rank)
 
         # Confidence Loss Including Positive and Negative Examples
         pos_idx = pos.unsqueeze(2).expand_as(conf_data)
         neg_idx = neg.unsqueeze(2).expand_as(conf_data)
-        conf_p = conf_data[(pos_idx+neg_idx).gt(0)].view(-1, self.num_classes)
-        targets_weighted = conf_t[(pos+neg).gt(0)]
+        conf_p = conf_data[(pos_idx + neg_idx).gt(0)].view(-1, self.num_classes)
+        targets_weighted = conf_t[(pos + neg).gt(0)]
         loss_c = F.cross_entropy(conf_p, targets_weighted, size_average=False)
+
+        # Orientation Loss Including Positive and Negative Examples
+        pos_idx = pos.unsqueeze(2).expand_as(orientation_data)
+        neg_idx = neg.unsqueeze(2).expand_as(orientation_data)
+        ori_p = orientation_data[(pos_idx + neg_idx).gt(0)].view(-1, 1)
+        targets_weighted = orientation_t[(pos + neg).gt(0)]
+        loss_o = torch.sum(dot_product_loss(F.sigmoid(ori_p).float(), targets_weighted).float())
+
+        # Parked Loss Including Positive and Negative Examples
+        pos_idx = pos.unsqueeze(2).expand_as(parked_data)
+        neg_idx = neg.unsqueeze(2).expand_as(parked_data)
+        parked_p = parked_data[(pos_idx + neg_idx).gt(0)].view(-1, 1)
+        targets_weighted = parked_t[(pos + neg).gt(0)]
+        loss_p = F.binary_cross_entropy(
+            parked_p, targets_weighted, size_average=False)
 
         # Sum of losses: L(x,c,l,g) = (Lconf(x, c) + αLloc(x,l,g)) / N
 
         N = num_pos.data.sum()
         loss_l /= N.float()
         loss_c /= N.float()
-        return loss_l, loss_c
+        loss_o /= N.float()
+        loss_p /= N.float()
+        return loss_l, loss_c, loss_o, loss_p

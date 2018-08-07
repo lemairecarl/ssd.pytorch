@@ -63,6 +63,8 @@ class MIOAnnotationTransform(object):
         res = []
         for obj in target:
             name = obj['class']
+            angle = float(obj['angle']) / (2 * np.pi)
+            parked = float(float(obj['mag']) < 1.)
             bbox = obj
 
             pts = ['xmin', 'ymin', 'xmax', 'ymax']
@@ -74,6 +76,8 @@ class MIOAnnotationTransform(object):
                 bndbox.append(cur_pt)
             label_idx = self.class_to_ind[name]
             bndbox.append(label_idx)
+            bndbox.append(angle)
+            bndbox.append(parked)
             res += [bndbox]  # [xmin, ymin, xmax, ymax, label_ind]
             # img_id = target.find('filename').text[:-4]
 
@@ -132,7 +136,7 @@ class MIODetection(data.Dataset):
 
         if self.transform is not None:
             target = np.array(target)
-            img, boxes, labels = self.transform(img, target[:, :4], target[:, 4])
+            img, boxes, labels = self.transform(img, target[:, :4], target[:, 4:])
             # to rgb
             img = img[:, :, (2, 1, 0)]
             # img = img.transpose(2, 0, 1)

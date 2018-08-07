@@ -115,9 +115,10 @@ def train():
     if args.resume:
         print('Resuming training, loading {}...'.format(args.resume))
         print('Skip loading for conf', args.fresh)
-        ssd_net.load_weights(args.resume, args.fresh)
+        ssd_net.load_weights(args.resume, cut=args.fresh)
         if args.fresh:
             ssd_net.conf.apply(weights_init)
+            ssd_net.status.apply(weights_init)
     else:
         vgg_weights = torch.load(args.save_folder + args.basenet)
         print('Loading base network...')
@@ -132,6 +133,7 @@ def train():
         ssd_net.extras.apply(weights_init)
         ssd_net.loc.apply(weights_init)
         ssd_net.conf.apply(weights_init)
+        ssd_net.status.apply(weights_init)
 
     optimizer = optim.SGD(net.parameters(), lr=args.lr, momentum=args.momentum,
                           weight_decay=args.weight_decay)
@@ -140,8 +142,13 @@ def train():
 
     net.train()
     # loss counters
-    loc_loss = LossHistory()
-    conf_loss = LossHistory()
+    loc_loss = LossHistory('Loc')
+    conf_loss = LossHistory('Conf')
+    orientation_loss = LossHistory('Ori')
+    parked_loss = LossHistory('Parked')
+
+    history = [loc_loss, conf_loss, orientation_loss, parked_loss]
+
     epoch = 0
     print('Loading the dataset...')
 
@@ -181,43 +188,34 @@ def train():
 
         # load train data
         images, targets = next(batch_iterator)
-
-        if args.cuda:
-            images = Variable(images.cuda())
-            targets = [Variable(ann.cuda(), volatile=True) for ann in targets]
-        else:
-            images = Variable(images)
-            targets = [Variable(ann, volatile=True) for ann in targets]
+        with torch.no_grad():
+            if args.cuda:
+                images = Variable(images.cuda())
+                targets = [Variable(ann.cuda()) for ann in targets]
+            else:
+                images = Variable(images)
+                targets = [Variable(ann) for ann in targets]
         # forward
         t0 = time.time()
         out = net(images)
         # backprop
         optimizer.zero_grad()
-        loss_l, loss_c = criterion(out, targets)
-        loss = loss_l + loss_c
+        loss_l, loss_c, loss_o, loss_p = criterion(out, targets)
+        loss = loss_l + loss_c + loss_o + loss_p
         loss.backward()
         optimizer.step()
 
         if iteration % epoch_size == 0:
             print("Epoch", iteration // epoch_size)
-            loc_loss.end_epoch()
-            conf_loss.end_epoch()
+            list(map(lambda hi: hi.end_epoch(), history))
 
-        t1 = time.time()
-        loc_loss.update(loss_l.data.item())
-        conf_loss.update(loss_c.data.item())
+        for h, l in zip(history, [loss_l, loss_c, loss_o, loss_p]):
+            h.update(l.data.item())
 
-        pbar.desc = 'Loc : {:10.5f}, Conf: {:10.5f}'.format(loc_loss.avg,
-                                                      conf_loss.avg)
-
-        if iteration % 10 == 0:
-            pass
-            #print('timer: %.4f sec.' % (t1 - t0))
-            #print('iter ' + repr(iteration) + ' || Loss: %.4f ||' % (loss.data[0]), end=' ')
+        pbar.desc = ','.join(['{} : {:10.5f}'.format(h.name, h.avg) for h in history])
 
 
         if iteration != 0 and iteration % 5000 == 0:
-            #print('Saving state, iter:', iteration)
             torch.save(ssd_net.state_dict(), 'weights/ssd300_{}_'.format(args.dataset) +
                        repr(iteration) + '.pth')
     torch.save(ssd_net.state_dict(),

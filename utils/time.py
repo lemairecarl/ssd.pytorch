@@ -16,7 +16,8 @@ class LossHistory(object):
         monitor.epochs  # returns the loss curve as a list
     """
 
-    def __init__(self):
+    def __init__(self, name):
+        self.name = name
         self.history = []
         self.epochs = []
         self.sum = 0.0

@@ -68,7 +68,7 @@ def jaccard(box_a, box_b):
     return inter / union  # [A,B]
 
 
-def match(threshold, truths, priors, variances, labels, loc_t, conf_t, idx):
+def match(threshold, truths, priors, variances, labels, orientation, parked, target, idx):
     """Match each prior box with the ground truth box of the highest jaccard
     overlap, encode the bounding boxes, then return the matched indices
     corresponding to both confidence and location preds.
@@ -108,8 +108,16 @@ def match(threshold, truths, priors, variances, labels, loc_t, conf_t, idx):
     conf = labels[best_truth_idx] + 1         # Shape: [num_priors]
     conf[best_truth_overlap < threshold] = 0  # label as background
     loc = encode(matches, priors, variances)
+    orientation = orientation[best_truth_idx]
+    orientation[best_truth_overlap < threshold] = 0
+    parked = parked[best_truth_idx]
+    parked[best_truth_overlap < threshold] = 0
+
+    loc_t, conf_t, orientation_t, parked_t = target
     loc_t[idx] = loc    # [num_priors,4] encoded offsets to learn
     conf_t[idx] = conf  # [num_priors] top class label for each prior
+    orientation_t[idx] = orientation # [num_priors, 1] orientation angle (0 and 1)
+    parked_t[idx] = parked # [num_priors, 1] prob of being parked
 
 
 def encode(matched, priors, variances):
