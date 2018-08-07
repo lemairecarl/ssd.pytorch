@@ -197,6 +197,12 @@ def train():
         loss = loss_l + loss_c
         loss.backward()
         optimizer.step()
+
+        if iteration % epoch_size == 0:
+            print("Epoch", iteration // epoch_size)
+            loc_loss.end_epoch()
+            conf_loss.end_epoch()
+
         t1 = time.time()
         loc_loss.update(loss_l.data.item())
         conf_loss.update(loss_c.data.item())
