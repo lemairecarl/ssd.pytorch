@@ -6,33 +6,31 @@ https://github.com/fmassa/vision/blob/voc_dataset/torchvision/datasets/voc.py
 Updated by: Ellis Brown, Max deGroot
 """
 import json
+import os.path as osp
 from random import shuffle
 
+import cv2
 import h5py
-
-from utils import SSDAugmentation
-from data.config import HOME
-import os.path as osp
-import sys
+import numpy as np
 import torch
 import torch.utils.data as data
-import cv2
-import numpy as np
 
+from data.config import HOME
+from utils import SSDAugmentation
 
 MIO_CLASSES = [
-        "articulated_truck",
-        "bicycle",
-        "bus",
-        "car",
-        "motorcycle",
-        "motorized_vehicle",
-        "non-motorized_vehicle",
-        "pedestrian",
-        "pickup_truck",
-        "single_unit_truck",
-        "work_van"
-    ]
+    "articulated_truck",
+    "bicycle",
+    "bus",
+    "car",
+    "motorcycle",
+    "motorized_vehicle",
+    "non-motorized_vehicle",
+    "pedestrian",
+    "pickup_truck",
+    "single_unit_truck",
+    "work_van"
+]
 
 # note: if you used our download scripts, this should be right
 MIO_ROOT = osp.join(HOME, "data/MIO/")
@@ -114,6 +112,7 @@ class MIODetection(data.Dataset):
         self._annopath = osp.join(self.root, 'json{}.json'.format('train' if is_train else 'test'))
         self._imgpath = osp.join(self.root, 'images', '%s.jpg')
         self.get_h5pyfile = lambda: h5py.File(osp.join(self.root, 'apriori.h5'), 'r')
+        self.is_train = is_train
         self.ids = list()
         data = json.load(open(self._annopath))
         items = list(data.items())
@@ -135,21 +134,26 @@ class MIODetection(data.Dataset):
         img = cv2.imread(self._imgpath % img_id)
         height, width, channels = img.shape
         with self.get_h5pyfile() as f:
-            odf = f[video_id].value - 1
+            odf = f[video_id].value - 1  # Remove the uniform dist
 
         p = [.5] + [.5 / odf.shape[0]] * odf.shape[0]
         to_take = np.random.choice(np.arange(0, odf.shape[0] + 1), p=p)
+        to_take = to_take if self.is_train else odf.shape[0]
         if to_take == 0:
+            # Initial uniform odf
             odf = np.ones([19, 19, odf.shape[-1]]) / odf.shape[-1]
         else:
             # Remove all but one uniform
-            odf = odf[np.random.choice(np.arange(0, to_take), to_take)].sum(0)
-            odf[odf == 0] = 1.
+            odf = odf[np.random.choice(np.arange(0, to_take), to_take, replace=False)].sum(0)
+            # odf[odf == 0] = 1.
             odf = odf / odf.sum(-1, keepdims=True)
-            # Add noise
-        odf += np.random.normal(0, 0.1, size=[19, 19, odf.shape[-1]])
-        odf = odf.clip(0, 1.)
-        odf = odf / odf.sum(-1, keepdims=True)
+            odf[np.isnan(odf)] = 0
+        # Add noise
+        if self.is_train:
+            # 10% noise
+            odf += np.random.normal(0, 0.1, size=[19, 19, odf.shape[-1]])
+            odf = odf.clip(0, 1.)
+            odf = odf / odf.sum(-1, keepdims=True)
 
         if self.target_transform is not None:
             target = self.target_transform(target, width, height)
@@ -161,8 +165,11 @@ class MIODetection(data.Dataset):
             img = img[:, :, (2, 1, 0)]
             # img = img.transpose(2, 0, 1)
             target = np.hstack((boxes, labels))
-        return torch.from_numpy(img).permute(2, 0, 1), target, torch.from_numpy(np.copy(odf).astype(np.float32)).permute(2, 0, 1), height, width
-        # return torch.from_numpy(img), target, height, width
+        return (torch.from_numpy(img).permute(2, 0, 1),
+                target,
+                torch.from_numpy(np.copy(odf).astype(np.float32)).permute(2, 0, 1),
+                height,
+                width)
 
     def pull_image(self, index):
         '''Returns the original image object at index in PIL form
@@ -207,8 +214,33 @@ class MIODetection(data.Dataset):
         '''
         return torch.Tensor(self.pull_image(index)).unsqueeze_(0)
 
+
 if __name__ == '__main__':
+    from itertools import product
     MEANS = (104, 117, 123)
     d = MIODetection('/data/mio_tcd_seg', transform=SSDAugmentation(300,
-                                                         MEANS))
-    d[0]
+                                                                    MEANS), is_train=False)
+    for idx in range(100):
+        img = d.pull_image(idx)
+        _, _, odf, height, width = d.pull_item(idx)
+        img = cv2.resize(img, (608,608))
+        width, height = 608, 608
+        odf = odf.numpy()
+        fx = width / 19
+        fy = height / 19
+        box = list(range(19))
+        angles = np.linspace(0, 1.,11)
+        cst = 50
+        for i,j in product(box,box):
+            cx = int((i + 0.5) * fx)
+            cy = int((j + 0.5) * fy)
+            o = odf[:,i, j]
+            i1 = np.argmax(o)
+            cx2 = cx + np.cos(angles[i1] * 2 * np.pi) * cst * o[i1]
+            cy2 = cy + np.sin(angles[i1] * 2 * np.pi) * cst * o[i1]
+            cx2, cy2 = map(int, [cx2, cy2])
+            cv2.arrowedLine(img, (cx,cy), (cx2,cy2), (0, 255, 0),tipLength=0.3)
+        cv2.imshow('lol', img)
+        cv2.waitKey(10000)
+
+
