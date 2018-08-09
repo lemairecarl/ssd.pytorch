@@ -126,7 +126,7 @@ class MultiBoxLoss(nn.Module):
         neg_idx = neg.unsqueeze(2).expand_as(orientation_data)
         ori_p = orientation_data[(pos_idx + neg_idx).gt(0)].view(-1, 1)
         targets_weighted = orientation_t[(pos + neg).gt(0)]
-        loss_o = torch.sum(dot_product_loss(F.sigmoid(ori_p).float(), targets_weighted).float())
+        loss_o = dot_product_loss(F.sigmoid(ori_p).float(), targets_weighted).float()
 
         # Parked Loss Including Positive and Negative Examples
         pos_idx = pos.unsqueeze(2).expand_as(parked_data)
@@ -135,6 +135,7 @@ class MultiBoxLoss(nn.Module):
         targets_weighted = parked_t[(pos + neg).gt(0)]
         loss_p = F.binary_cross_entropy(
             F.sigmoid(parked_p), targets_weighted, size_average=False)
+        loss_o = torch.sum((0.5 * targets_weighted) * loss_o + (2 * (1 - targets_weighted)) * loss_o)
 
         # Sum of losses: L(x,c,l,g) = (Lconf(x, c) + αLloc(x,l,g)) / N
 

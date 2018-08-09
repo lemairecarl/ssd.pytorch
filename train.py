@@ -214,10 +214,10 @@ def train():
 
 
         if iteration != 0 and iteration % 5000 == 0:
-            torch.save(ssd_net.state_dict(), 'weights/ssd300_{}_'.format(args.dataset) +
+            torch.save(ssd_net.state_dict(), 'weights/ssd300_aux_{}_'.format(args.dataset) +
                        repr(iteration) + '.pth')
     torch.save(ssd_net.state_dict(),
-               args.save_folder + '' + args.dataset + '.pth')
+               args.save_folder + '' + args.dataset + '_aux.pth')
 
 
 def adjust_learning_rate(optimizer, gamma, step):
