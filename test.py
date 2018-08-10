@@ -14,14 +14,14 @@ from data import BaseTransform, MIO_CLASSES
 from data import MIO_CLASSES as labelmap, MIOAnnotationTransform, MIODetection
 from ssd import build_ssd
 
-SHOW = True
+SHOW = False
 
 parser = argparse.ArgumentParser(description='Single Shot MultiBox Detection')
-parser.add_argument('--trained_model', default='weights/ssd300_MIO_30000.pth',
+parser.add_argument('--trained_model', default='weights/MIO.pth',
                     type=str, help='Trained state_dict file path to open')
 parser.add_argument('--save_folder', default='.', type=str,
                     help='Dir to save results')
-parser.add_argument('--visual_threshold', default=0.0, type=float,
+parser.add_argument('--visual_threshold', default=0.01, type=float,
                     help='Final confidence threshold')
 parser.add_argument('--cuda', action='store_true',
                     help='Use cuda to train model')
@@ -42,7 +42,7 @@ def test_net(save_folder, net, cuda, testset, transform, thresh):
     num_images = len(testset)
     results = []
     for i in tqdm(range(num_images)):
-        print('Testing image {:d}/{:d}....'.format(i + 1, num_images))
+        # print('Testing image {:d}/{:d}....'.format(i + 1, num_images))
         img = testset.pull_image(i)
         img_id = testset.ids[i][0]
         x = torch.from_numpy(transform(img)[0][..., (2, 1, 0)]).permute(2, 0, 1)
