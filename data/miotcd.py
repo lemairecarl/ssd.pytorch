@@ -7,7 +7,8 @@ Updated by: Ellis Brown, Max deGroot
 """
 import json
 import os.path as osp
-from random import shuffle
+from random import shuffle, seed
+import warnings
 
 import cv2
 import h5py
@@ -111,11 +112,12 @@ class MIODetection(data.Dataset):
         self.name = dataset_name
         self._annopath = osp.join(self.root, 'json{}.json'.format('train' if is_train else 'test'))
         self._imgpath = osp.join(self.root, 'images', '%s.jpg')
-        self.get_h5pyfile = lambda: h5py.File(osp.join(self.root, 'apriori.h5'), 'r')
+        self.get_h5pyfile = lambda: h5py.File(osp.join(self.root, 'apriori2.h5'), 'r')
         self.is_train = is_train
         self.ids = list()
         data = json.load(open(self._annopath))
         items = list(data.items())
+        seed(1337)
         shuffle(items)
 
         for k, [[_, video_id], vals] in items:
@@ -134,7 +136,7 @@ class MIODetection(data.Dataset):
         img = cv2.imread(self._imgpath % img_id)
         height, width, channels = img.shape
         with self.get_h5pyfile() as f:
-            odf = f[video_id].value - 1  # Remove the uniform dist
+            odf = f[video_id].value  # Remove the uniform dist
 
         p = [.5] + [.5 / odf.shape[0]] * odf.shape[0]
         to_take = np.random.choice(np.arange(0, odf.shape[0] + 1), p=p)
@@ -145,15 +147,18 @@ class MIODetection(data.Dataset):
         else:
             # Remove all but one uniform
             odf = odf[np.random.choice(np.arange(0, to_take), to_take, replace=False)].sum(0)
-            # odf[odf == 0] = 1.
-            odf = odf / odf.sum(-1, keepdims=True)
-            odf[np.isnan(odf)] = 0
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore")
+                odf = odf / odf.sum(-1, keepdims=True)
+                odf[np.isnan(odf)] = 0
         # Add noise
         if self.is_train:
             # 10% noise
-            odf += np.random.normal(0, 0.1, size=[19, 19, odf.shape[-1]])
-            odf = odf.clip(0, 1.)
-            odf = odf / odf.sum(-1, keepdims=True)
+            odf += np.random.normal(0, 0.05, size=[19, 19, odf.shape[-1]])
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore")
+                odf = odf / odf.sum(-1, keepdims=True)
+                odf[np.isnan(odf)] = 0
 
         if self.target_transform is not None:
             target = self.target_transform(target, width, height)
@@ -214,33 +219,44 @@ class MIODetection(data.Dataset):
         '''
         return torch.Tensor(self.pull_image(index)).unsqueeze_(0)
 
+def draw_odf(odf, img):
+    width, height = 608, 608
+    odf = odf.numpy()
+    fx = width / 19
+    fy = height / 19
+    box = list(range(19))
+    angles = np.linspace(0, 1.,11)
+    cst = 50
+    for i,j in product(box,box):
+        cx = int((i + 0.5) * fx)
+        cy = int((j + 0.5) * fy)
+        o = odf[:,j, i]
+        i1 = np.argmax(o)
+        cx2 = cx + np.cos(angles[i1] * 2 * np.pi) * cst * o[i1]
+        cy2 = cy + np.sin(angles[i1] * 2 * np.pi) * cst * o[i1]
+        cx2, cy2 = map(int, [cx2, cy2])
+        cv2.arrowedLine(img, (cx,cy), (cx2,cy2), (0, 255, 0),tipLength=0.3)
+    cv2.imshow('lol', img)
+    cv2.waitKey(10000)
+
 
 if __name__ == '__main__':
     from itertools import product
     MEANS = (104, 117, 123)
     d = MIODetection('/data/mio_tcd_seg', transform=SSDAugmentation(300,
                                                                     MEANS), is_train=False)
+    d1 = MIODetection('/data/mio_tcd_seg', transform=None, is_train=False)
     for idx in range(100):
-        img = d.pull_image(idx)
-        _, _, odf, height, width = d.pull_item(idx)
+        # img = d.pull_image(idx)
+        img, _, odf, height, width = d.pull_item(idx)
+        img = img.permute(1, 2, 0).numpy()
         img = cv2.resize(img, (608,608))
-        width, height = 608, 608
-        odf = odf.numpy()
-        fx = width / 19
-        fy = height / 19
-        box = list(range(19))
-        angles = np.linspace(0, 1.,11)
-        cst = 50
-        for i,j in product(box,box):
-            cx = int((i + 0.5) * fx)
-            cy = int((j + 0.5) * fy)
-            o = odf[:,i, j]
-            i1 = np.argmax(o)
-            cx2 = cx + np.cos(angles[i1] * 2 * np.pi) * cst * o[i1]
-            cy2 = cy + np.sin(angles[i1] * 2 * np.pi) * cst * o[i1]
-            cx2, cy2 = map(int, [cx2, cy2])
-            cv2.arrowedLine(img, (cx,cy), (cx2,cy2), (0, 255, 0),tipLength=0.3)
-        cv2.imshow('lol', img)
-        cv2.waitKey(10000)
+
+        draw_odf(odf, img.copy())
+        img, _, odf, height, width = d1.pull_item(idx)
+        img = img.permute(1, 2, 0).numpy()
+        img = cv2.resize(img, (608, 608))
+        draw_odf(odf, img.copy())
+
 
 

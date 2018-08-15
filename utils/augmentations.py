@@ -234,6 +234,7 @@ class RandomSampleCrop(object):
 
     def __call__(self, image, boxes=None, labels=None, odf=None):
         height, width, _ = image.shape
+        odf = cv2.resize(odf, (width, height))
         while True:
             # randomly choose a mode
             mode = random.choice(self.sample_options)
@@ -263,10 +264,6 @@ class RandomSampleCrop(object):
 
                 # convert to integer rect x1,y1,x2,y2
                 rect = np.array([int(left), int(top), int(left+w), int(top+h)])
-                odf_rect = np.array([int(left / width * 19),
-                                     int(top/ height * 1),
-                                     int((left+w)/ width * 19),
-                                     int((top+h)/ height * 19)])
 
                 # calculate IoU (jaccard overlap) b/t the cropped and gt boxes
                 overlap = jaccard_numpy(boxes, rect)
@@ -278,8 +275,8 @@ class RandomSampleCrop(object):
                 # cut the crop from the image
                 current_image = current_image[rect[1]:rect[3], rect[0]:rect[2],
                                               :]
-                current_odf = current_odf[odf_rect[1]:odf_rect[3], odf_rect[0]:odf_rect[2],
-                                :]
+                current_odf = current_odf[rect[1]:rect[3], rect[0]:rect[2],
+                                              :]
 
 
                 # keep overlap with gt box IF center in sampled patch
@@ -314,7 +311,7 @@ class RandomSampleCrop(object):
                                                   rect[2:])
                 # adjust to crop (by substracting crop's left,top)
                 current_boxes[:, 2:] -= rect[:2]
-
+                current_odf = cv2.resize(current_odf, (19, 19))
                 return current_image, current_boxes, current_labels, current_odf
 
 
@@ -327,11 +324,12 @@ class Expand(object):
             return image, boxes, labels, odf
 
         height, width, depth = image.shape
+        odf = cv2.resize(odf, (width, height))
         ratio = random.uniform(1, 4)
-        left = random.uniform(0, width*ratio - width)
-        left_o = random.uniform(0, 19*ratio - 19)
-        top = random.uniform(0, height*ratio - height)
-        top_o = random.uniform(0, 19*ratio - 19)
+        left_param = random.uniform(0,1)
+        left = left_param * (width*ratio - width)
+        top_param = random.uniform(0, 1)
+        top = top_param * (height*ratio - height)
 
         expand_image = np.zeros(
             (int(height*ratio), int(width*ratio), depth),
@@ -342,13 +340,13 @@ class Expand(object):
         image = expand_image
 
         expand_odf = np.zeros(
-            (int(19 * ratio), int(19 * ratio), 10),
+            (int(height * ratio), int(width * ratio), 10),
             dtype=odf.dtype)
-        expand_odf[:, :, :] = 0.1
-        expand_odf[int(top_o):int(top_o + 19),
-        int(left_o):int(left_o + 19)] = odf
+        expand_odf[:, :, :] = 0
+        expand_odf[int(top):int(top + height),
+        int(left):int(left + width)] = odf
         odf = expand_odf
-        odf = cv2.resize(odf, (19, 19), interpolation=cv2.INTER_NEAREST)
+        odf = cv2.resize(odf, (19, 19))
 
         boxes = boxes.copy()
         boxes[:, :2] += (int(left), int(top))
@@ -364,8 +362,8 @@ class RandomMirror(object):
             image = image[:, ::-1]
             odf = odf[:, ::-1]
             top = odf[..., :5]
-            odf[..., :5] = top[..., ::-1]
             bot = odf[..., 5:]
+            odf[..., :5] = top[..., ::-1]
             odf[..., 5:] = bot[..., ::-1]
             boxes = boxes.copy()
             boxes[:, 0::2] = width - boxes[:, 2::-2]
