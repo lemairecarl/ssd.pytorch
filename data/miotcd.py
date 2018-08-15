@@ -112,16 +112,18 @@ class MIODetection(data.Dataset):
         self.name = dataset_name
         self._annopath = osp.join(self.root, 'json{}.json'.format('train' if is_train else 'test'))
         self._imgpath = osp.join(self.root, 'images', '%s.jpg')
-        self.get_h5pyfile = lambda: h5py.File(osp.join(self.root, 'apriori2.h5'), 'r')
+        self.get_h5pyfile = lambda: h5py.File(osp.join(self.root, 'apriori3.h5'), 'r')
         self.is_train = is_train
         self.ids = list()
         data = json.load(open(self._annopath))
         items = list(data.items())
         seed(1337)
         shuffle(items)
-
-        for k, [[_, video_id], vals] in items:
-            self.ids.append((k, (video_id, vals)))
+        with self.get_h5pyfile() as f:
+            for k, [[_, video_id], vals] in items:
+                if video_id in f:
+                    # 2-3 per file
+                    self.ids.append((k, (video_id, vals)))
 
     def __getitem__(self, index):
         im, gt, odf, h, w = self.pull_item(index)
