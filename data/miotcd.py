@@ -112,7 +112,7 @@ class MIODetection(data.Dataset):
         self.name = dataset_name
         self._annopath = osp.join(self.root, 'json{}.json'.format('train' if is_train else 'test'))
         self._imgpath = osp.join(self.root, 'images', '%s.jpg')
-        self.get_h5pyfile = lambda: h5py.File(osp.join(self.root, 'apriori3.h5'), 'r')
+        self.get_h5pyfile = lambda: h5py.File(osp.join(self.root, 'apriori2.h5'), 'r')
         self.is_train = is_train
         self.ids = list()
         data = json.load(open(self._annopath))
@@ -149,34 +149,36 @@ class MIODetection(data.Dataset):
         else:
             # Remove all but one uniform
             odf = odf[np.random.choice(np.arange(0, to_take), to_take, replace=False)].sum(0)
-            with warnings.catch_warnings():
-                warnings.simplefilter("ignore")
-                odf = odf / odf.sum(-1, keepdims=True)
-                odf[np.isnan(odf)] = 0
+            odf = self.normalize_odf(odf)
         # Add noise
         if self.is_train:
             # 10% noise
             odf += np.random.normal(0, 0.05, size=[19, 19, odf.shape[-1]])
-            with warnings.catch_warnings():
-                warnings.simplefilter("ignore")
-                odf = odf / odf.sum(-1, keepdims=True)
-                odf[np.isnan(odf)] = 0
+            odf = self.normalize_odf(odf)
 
         if self.target_transform is not None:
             target = self.target_transform(target, width, height)
 
         if self.transform is not None:
             target = np.array(target)
-            img, boxes, labels, odf = self.transform(img, target[:, :4], target[:, 4:], odf=odf)
+            img, boxes, labels, odf = self.transform(img,  target[:, :4], target[:, 4:], odf=odf)
             # to rgb
             img = img[:, :, (2, 1, 0)]
             # img = img.transpose(2, 0, 1)
             target = np.hstack((boxes, labels))
+            odf = self.normalize_odf(odf)
         return (torch.from_numpy(img).permute(2, 0, 1),
                 target,
                 torch.from_numpy(np.copy(odf).astype(np.float32)).permute(2, 0, 1),
                 height,
                 width)
+
+    def normalize_odf(self, odf):
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            odf = odf / odf.sum(-1, keepdims=True)
+            odf[np.isnan(odf)] = 0
+        return odf
 
     def pull_image(self, index):
         '''Returns the original image object at index in PIL form
